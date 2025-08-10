@@ -8,6 +8,7 @@ using UnityEngine;
 public class SceneConfigWindow : EditorWindow
 {
     private string lastDirectory;
+    private SaveSettings settings;
 
     [MenuItem("Tools/Scene Config")] 
     public static void ShowWindow()
@@ -15,10 +16,40 @@ public class SceneConfigWindow : EditorWindow
         GetWindow<SceneConfigWindow>("Scene Config");
     }
 
+    private void OnEnable()
+    {
+#if UNITY_EDITOR
+        // Try load or create default settings asset
+        if (settings == null)
+        {
+            settings = SaveSettingsUtility.LoadOrCreateSettingsAsset();
+        }
+#endif
+    }
+
     private void OnGUI()
     {
         EditorGUILayout.Space();
         EditorGUILayout.LabelField("JSON конфиг сцены", EditorStyles.boldLabel);
+        EditorGUILayout.Space();
+
+        settings = (SaveSettings)EditorGUILayout.ObjectField("Save Settings", settings, typeof(SaveSettings), false);
+        if (settings == null)
+        {
+            if (GUILayout.Button("Создать SaveSettings", GUILayout.Height(22)))
+            {
+#if UNITY_EDITOR
+                settings = SaveSettingsUtility.LoadOrCreateSettingsAsset();
+#endif
+            }
+        }
+        else
+        {
+            EditorGUILayout.LabelField("Папка по умолчанию:", settings.ResolveFolderAbsolute());
+            EditorGUILayout.LabelField("Файл по умолчанию:", settings.ResolveDefaultFileAbsolute());
+            EditorGUILayout.LabelField("Компонентов для сохранения:", settings.componentScripts?.Count.ToString() ?? "0");
+        }
+
         EditorGUILayout.Space();
 
         if (GUILayout.Button("Сохранить в JSON", GUILayout.Height(28)))
@@ -35,6 +66,17 @@ public class SceneConfigWindow : EditorWindow
         EditorGUILayout.LabelField("Последняя папка:", string.IsNullOrEmpty(lastDirectory) ? "(не выбрана)" : lastDirectory);
     }
 
+    private string GetDefaultDirectory()
+    {
+        if (!string.IsNullOrEmpty(lastDirectory)) return lastDirectory;
+        if (settings != null)
+        {
+            var folder = settings.ResolveFolderAbsolute();
+            if (!string.IsNullOrEmpty(folder)) return folder;
+        }
+        return Application.dataPath;
+    }
+
     private void SaveToJson()
     {
         var config = SaveServiceLocator.Current.LoadSceneConfig();
@@ -44,8 +86,9 @@ public class SceneConfigWindow : EditorWindow
             return;
         }
 
-        string defaultDir = string.IsNullOrEmpty(lastDirectory) ? Application.dataPath : lastDirectory;
-        string path = EditorUtility.SaveFilePanel("Сохранить SceneConfig в JSON", defaultDir, "SceneConfig", "json");
+        string defaultDir = GetDefaultDirectory();
+        string defaultName = settings != null ? Path.GetFileName(settings.ResolveDefaultFileAbsolute()) : "SceneConfig.json";
+        string path = EditorUtility.SaveFilePanel("Сохранить SceneConfig в JSON", defaultDir, Path.GetFileNameWithoutExtension(defaultName), "json");
         if (string.IsNullOrEmpty(path))
         {
             return;
@@ -60,7 +103,7 @@ public class SceneConfigWindow : EditorWindow
 
     private void LoadFromJson()
     {
-        string defaultDir = string.IsNullOrEmpty(lastDirectory) ? Application.dataPath : lastDirectory;
+        string defaultDir = GetDefaultDirectory();
         string path = EditorUtility.OpenFilePanel("Загрузить SceneConfig из JSON", defaultDir, "json");
         if (string.IsNullOrEmpty(path))
         {
@@ -68,7 +111,7 @@ public class SceneConfigWindow : EditorWindow
         }
 
         string json = File.ReadAllText(path);
-        var config = JsonUtility.FromJson<SceneConfig>(json);
+        var config = JsonUtility.FromJson<Scaffold.SceneConfig>(json);
         if (config == null)
         {
             EditorUtility.DisplayDialog("Ошибка", "Не удалось распарсить JSON в SceneConfig.", "OK");
